@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>myBoostiq Admin</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: #0a0e15;
+  color: #e6e6e6;
+  padding: 20px;
+}
+.container { max-width: 900px; margin: 0 auto; }
+.card {
+  background: #11161d;
+  border: 1px solid #1d242d;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+h1 { color: #05fabd; margin-bottom: 8px; font-size: 2rem; }
+h2 { color: #05fabd; margin-bottom: 16px; font-size: 1.3rem; border-bottom: 2px solid #1d242d; padding-bottom: 8px; }
+input, textarea {
+  width: 100%;
+  background: #0b0f14;
+  border: 1px solid #1d242d;
+  border-radius: 8px;
+  padding: 12px;
+  color: #fff;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+input:focus, textarea:focus {
+  outline: none;
+  border-color: #05fabd;
+}
+.btn {
+  background: linear-gradient(90deg, #04b585, #05fabd);
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  margin-right: 10px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+.btn:hover { opacity: 0.85; }
+.btn-red {
+  background: linear-gradient(90deg, #c93030, #ff3d3d);
+}
+.btn-gray {
+  background: #1d242d;
+}
+.status-box {
+  background: #0b0f14;
+  border: 1px solid #1d242d;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.status-box strong { color: #05fabd; }
+.status-pre { color: #ffa500; }
+.status-buy { color: #05fabd; }
+.status-sell { color: #ff3d3d; }
+.status-closed { color: #666; }
+textarea { min-height: 120px; font-family: monospace; }
+.whitelist-item {
+  background: #0b0f14;
+  padding: 8px 12px;
+  margin: 4px 0;
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+.label { display: block; color: #aaa; margin-bottom: 6px; font-size: 13px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 768px) { .row { grid-template-columns: 1fr; } }
+.loading { opacity: 0.5; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>🚀 myBoostiq Admin</h1>
+  <p style="color: #aaa; margin-bottom: 24px;">Panel de administración</p>
+
+  <!-- AUTH -->
+  <div class="card" id="authCard">
+    <h2>Auth</h2>
+    <label class="label">Admin Token</label>
+    <input type="password" id="adminToken" placeholder="MyBoost_IQ_1009">
+    <button class="btn" onclick="saveToken()">Guardar</button>
+  </div>
+
+  <!-- ESTADO ACTUAL -->
+  <div class="card" id="statusCard" style="display:none;">
+    <h2>Estado actual</h2>
+    <div class="status-box" id="currentStatus">
+      <p>Cargando...</p>
+    </div>
+    <button class="btn" onclick="refreshStatus()">Refrescar</button>
+    <button class="btn btn-red" onclick="closeBoost()">Cerrar (closed)</button>
+  </div>
+
+  <!-- PROGRAMAR BOOST -->
+  <div class="card" id="boostCard" style="display:none;">
+    <h2>Programar boost</h2>
+    
+    <label class="label">LP Pair (dirección del contrato)</label>
+    <input type="text" id="lpPair" placeholder="0x8f2e70b12bd1d55a64699a596b779e6a490a95be">
+    
+    <label class="label">Inicio (tu zona horaria)</label>
+    <input type="datetime-local" id="startTime">
+    
+    <div class="row">
+      <div>
+        <label class="label">Duración (minutos)</label>
+        <input type="number" id="duration" placeholder="5" value="5">
+      </div>
+      <div>
+        <label class="label">Duración sell (minutos)</label>
+        <input type="number" id="sellDuration" placeholder="2" value="2">
+      </div>
+    </div>
+    
+    <button class="btn" onclick="programBoost()">Programar</button>
+    <button class="btn btn-gray" onclick="startNow()">Iniciar ahora</button>
+  </div>
+
+  <!-- WHITELIST -->
+  <div class="card" id="whitelistCard" style="display:none;">
+    <h2>Whitelist</h2>
+    
+    <label class="label">Direcciones (una por línea)</label>
+    <textarea id="whitelistInput" placeholder="0xabc...
+0xdef...
+0x123..."></textarea>
+    
+    <button class="btn" onclick="replaceWhitelist()">Reemplazar lista</button>
+    <button class="btn btn-gray" onclick="addToWhitelist()">Añadir una</button>
+    <button class="btn btn-red" onclick="clearWhitelist()">Eliminar una</button>
+    <button class="btn btn-red" onclick="loadWhitelist()">Cargar whitelist</button>
+    
+    <div id="whitelistDisplay" style="margin-top: 20px;"></div>
+  </div>
+</div>
+
+<script>
+const API_BASE = location.origin;
+let TOKEN = localStorage.getItem('myboostiq_admin_token') || '';
+
+if (TOKEN) {
+  document.getElementById('adminToken').value = TOKEN;
+  showDashboard();
+}
+
+function saveToken() {
+  TOKEN = document.getElementById('adminToken').value;
+  localStorage.setItem('myboostiq_admin_token', TOKEN);
+  showDashboard();
+  refreshStatus();
+}
+
+function showDashboard() {
+  document.getElementById('authCard').style.display = 'none';
+  document.getElementById('statusCard').style.display = 'block';
+  document.getElementById('boostCard').style.display = 'block';
+  document.getElementById('whitelistCard').style.display = 'block';
+}
+
+async function refreshStatus() {
+  try {
+    const res = await fetch(`${API_BASE}/api/admin`, {
+      headers: { 'Authorization': `Bearer ${TOKEN}` }
+    });
+    
+    if (!res.ok) throw new Error('Auth error');
+    
+    const data = await res.json();
+    displayStatus(data.boost);
+    displayWhitelist(data.whitelist);
+    
+  } catch (error) {
+    console.error('Error:', error);
+    document.getElementById('currentStatus').innerHTML = '<p style="color:#ff3d3d;">❌ Error al cargar. Verifica el token.</p>';
+  }
+}
+
+function displayStatus(boost) {
+  if (!boost) {
+    document.getElementById('currentStatus').innerHTML = '<p><strong>status:</strong> <span class="status-closed">closed</span></p>';
+    return;
+  }
+  
+  const start = new Date(boost.start_time * 1000).toLocaleString();
+  const end = new Date(boost.end_time * 1000).toLocaleString();
+  const now = Date.now() / 1000;
+  
+  let timeLeft = '';
+  if (boost.status === 'pre') timeLeft = `Comienza en: ${Math.max(0, Math.floor((boost.start_time - now) / 60))} min`;
+  else if (boost.status !== 'closed') timeLeft = `Termina en: ${Math.max(0, Math.floor((boost.end_time - now) / 60))} min`;
+  
+  document.getElementById('currentStatus').innerHTML = `
+    <p><strong>pair:</strong> ${boost.pair}</p>
+    <p><strong>status:</strong> <span class="status-${boost.status}">${boost.status}</span></p>
+    <p><strong>start:</strong> ${start}</p>
+    <p><strong>end:</strong> ${end}</p>
+    ${timeLeft ? `<p><strong>${timeLeft}</strong></p>` : ''}
+  `;
+}
+
+function displayWhitelist(wallets) {
+  const div = document.getElementById('whitelistDisplay');
+  if (!wallets || wallets.length === 0) {
+    div.innerHTML = '<p style="color:#666;">No hay wallets en la lista</p>';
+    return;
+  }
+  
+  div.innerHTML = '<h3 style="color:#05fabd;font-size:1rem;margin-bottom:8px;">Wallets VIP (' + wallets.length + '):</h3>';
+  wallets.forEach(w => {
+    div.innerHTML += `<div class="whitelist-item">${w}</div>`;
+  });
+}
+
+async function programBoost() {
+  const pair = document.getElementById('lpPair').value.trim();
+  const startInput = document.getElementById('startTime').value;
+  const duration = parseInt(document.getElementById('duration').value) || 5;
+  const sellDuration = parseInt(document.getElementById('sellDuration').value) || 2;
+  
+  if (!pair || !startInput) {
+    alert('Completa todos los campos');
+    return;
+  }
+  
+  const startMs = new Date(startInput).getTime();
+  const endMs = startMs + (duration * 60 * 1000);
+  
+  try {
+    const res = await fetch(`${API_BASE}/api/admin`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        action: 'create_boost',
+        pair: pair,
+        start_time: Math.floor(startMs / 1000),
+        end_time: Math.floor(endMs / 1000),
+        status: 'pre'
+      })
+    });
+    
+    if (!res.ok) throw new Error('Error al programar');
+    
+    alert('✅ Boost programado correctamente');
+    refreshStatus();
+    
+  } catch (error) {
+    alert('❌ Error: ' + error.message);
+  }
+}
+
+async function startNow() {
+  const pair = document.getElementById('lpPair').value.trim();
+  const duration = parseInt(document.getElementById('duration').value) || 5;
+  
+  if (!pair) {
+    alert('Ingresa la dirección LP');
+    return;
+  }
+  
+  const now = Date.now();
+  const end = now + (duration * 60 * 1000);
+  
+  try {
+    const res = await fetch(`${API_BASE}/api/admin`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        action: 'create_boost',
+        pair: pair,
+        start_time: Math.floor(now / 1000),
+        end_time: Math.floor(end / 1000),
+        status: 'buy'
+      })
+    });
+    
+    if (!res.ok) throw new Error('Error');
+    
+    alert('✅ Boost iniciado ahora');
+    refreshStatus();
+    
+  } catch (error) {
+    alert('❌ Error: ' + error.message);
+  }
+}
+
+async function closeBoost() {
+  if (!confirm('¿Cerrar el boost actual?')) return;
+  
+  try {
+    const statusRes = await fetch(`${API_BASE}/api/status`);
+    const current = await statusRes.json();
+    
+    if (!current.id) {
+      alert('No hay boost activo');
+      return;
+    }
+    
+    const res = await fetch(`${API_BASE}/api/admin`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        action: 'update_status',
+        id: current.id,
+        status: 'closed'
+      })
+    });
+    
+    if (!res.ok) throw new Error('Error');
+    
+    alert('✅ Boost cerrado');
+    refreshStatus();
+    
+  } catch (error) {
+    alert('❌ Error: ' + error.message);
+  }
+}
+
+async function replaceWhitelist() {
+  const text = document.getElementById('whitelistInput').value;
+  const wallets = text.split('\n').map(w => w.trim()).filter(w => w.length > 0);
+  
+  if (wallets.length === 0) {
+    alert('No hay wallets para agregar');
+    return;
+  }
+  
+  try {
+    // Limpiar lista actual
+    await fetch(`${API_BASE}/api/admin`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ action: 'clear_whitelist' })
+    });
+    
+    // Agregar nuevas wallets
+    for (const wallet of wallets) {
+      await fetch(`${API_BASE}/api/admin`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          action: 'add_whitelist',
+          wallet_address: wallet
+        })
+      });
+    }
+    
+    alert(`✅ ${wallets.length} wallets agregadas`);
+    document.getElementById('whitelistInput').value = '';
+    refreshStatus();
+    
+  } catch (error) {
+    alert('❌ Error: ' + error.message);
+  }
+}
+
+async function addToWhitelist() {
+  const text = document.getElementById('whitelistInput').value.trim();
+  if (!text) {
+    alert('Ingresa una wallet');
+    return;
+  }
+  
+  try {
+    const res = await fetch(`${API_BASE}/api/admin`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        action: 'add_whitelist',
+        wallet_address: text
+      })
+    });
+    
+    if (!res.ok) throw new Error('Error');
+    
+    alert('✅ Wallet agregada');
+    document.getElementById('whitelistInput').value = '';
+    refreshStatus();
+    
+  } catch (error) {
+    alert('❌ Error: ' + error.message);
+  }
+}
+
+async function clearWhitelist() {
+  const wallet = prompt('¿Qué wallet quieres eliminar?');
+  if (!wallet) return;
+  
+  try {
+    const res = await fetch(`${API_BASE}/api/admin`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        action: 'remove_whitelist',
+        wallet_address: wallet
+      })
+    });
+    
+    if (!res.ok) throw new Error('Error');
+    
+    alert('✅ Wallet eliminada');
+    refreshStatus();
+    
+  } catch (error) {
+    alert('❌ Error: ' + error.message);
+  }
+}
+
+function loadWhitelist() {
+  refreshStatus();
+}
+</script>
+
+</body>
+</html>
