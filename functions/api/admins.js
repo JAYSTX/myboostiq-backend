@@ -1,6 +1,14 @@
 // functions/api/admin.js
 // Endpoints protegidos para administración
 
+// CORS headers para todas las respuestas
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Content-Type': 'application/json'
+};
+
 function checkAuth(request, env) {
   const authHeader = request.headers.get('Authorization');
   const token = authHeader?.replace('Bearer ', '');
@@ -11,13 +19,21 @@ function checkAuth(request, env) {
   return true;
 }
 
+// Handler para OPTIONS (preflight request)
+export async function onRequestOptions() {
+  return new Response(null, {
+    status: 204,
+    headers: CORS_HEADERS
+  });
+}
+
 export async function onRequestGet(context) {
   const { request, env } = context;
   
   if (!checkAuth(request, env)) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
-      headers: { 'Content-Type': 'application/json' }
+      headers: CORS_HEADERS
     });
   }
   
@@ -35,7 +51,8 @@ export async function onRequestGet(context) {
       boost: boost || null,
       whitelist: whitelist.results.map(w => w.wallet_address)
     }), {
-      headers: { 'Content-Type': 'application/json' }
+      status: 200,
+      headers: CORS_HEADERS
     });
     
   } catch (error) {
@@ -45,7 +62,7 @@ export async function onRequestGet(context) {
       detail: error.message 
     }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' }
+      headers: CORS_HEADERS
     });
   }
 }
@@ -56,7 +73,7 @@ export async function onRequestPost(context) {
   if (!checkAuth(request, env)) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
-      headers: { 'Content-Type': 'application/json' }
+      headers: CORS_HEADERS
     });
   }
   
@@ -76,7 +93,8 @@ export async function onRequestPost(context) {
         success: true, 
         id: result.meta.last_row_id 
       }), {
-        headers: { 'Content-Type': 'application/json' }
+        status: 200,
+        headers: CORS_HEADERS
       });
     }
     
@@ -89,7 +107,8 @@ export async function onRequestPost(context) {
       ).bind(status, id).run();
       
       return new Response(JSON.stringify({ success: true }), {
-        headers: { 'Content-Type': 'application/json' }
+        status: 200,
+        headers: CORS_HEADERS
       });
     }
     
@@ -102,7 +121,8 @@ export async function onRequestPost(context) {
       ).bind(wallet_address).run();
       
       return new Response(JSON.stringify({ success: true }), {
-        headers: { 'Content-Type': 'application/json' }
+        status: 200,
+        headers: CORS_HEADERS
       });
     }
     
@@ -115,7 +135,8 @@ export async function onRequestPost(context) {
       ).bind(wallet_address).run();
       
       return new Response(JSON.stringify({ success: true }), {
-        headers: { 'Content-Type': 'application/json' }
+        status: 200,
+        headers: CORS_HEADERS
       });
     }
     
@@ -124,13 +145,48 @@ export async function onRequestPost(context) {
       await env.DB.prepare('DELETE FROM whitelist').run();
       
       return new Response(JSON.stringify({ success: true }), {
-        headers: { 'Content-Type': 'application/json' }
+        status: 200,
+        headers: CORS_HEADERS
+      });
+    }
+    
+    // REEMPLAZAR WHITELIST COMPLETA
+    if (action === 'replace_whitelist') {
+      const { wallets } = body;
+      
+      if (!Array.isArray(wallets)) {
+        return new Response(JSON.stringify({ 
+          error: 'wallets must be an array' 
+        }), {
+          status: 400,
+          headers: CORS_HEADERS
+        });
+      }
+      
+      // Limpiar whitelist actual
+      await env.DB.prepare('DELETE FROM whitelist').run();
+      
+      // Agregar nuevas wallets
+      for (const wallet of wallets) {
+        if (wallet && wallet.startsWith('0x')) {
+          await env.DB.prepare(
+            'INSERT OR IGNORE INTO whitelist (wallet_address) VALUES (?)'
+          ).bind(wallet).run();
+        }
+      }
+      
+      return new Response(JSON.stringify({ 
+        success: true,
+        count: wallets.length 
+      }), {
+        status: 200,
+        headers: CORS_HEADERS
       });
     }
     
     return new Response(JSON.stringify({ error: 'Invalid action' }), {
       status: 400,
-      headers: { 'Content-Type': 'application/json' }
+      headers: CORS_HEADERS
     });
     
   } catch (error) {
@@ -140,7 +196,7 @@ export async function onRequestPost(context) {
       detail: error.message 
     }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' }
+      headers: CORS_HEADERS
     });
   }
 }
